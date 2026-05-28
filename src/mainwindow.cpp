@@ -12,6 +12,7 @@
 #include "MedianFilter.h"
 #include "MovingAverageFilter.h"
 #include "NotchFilter.h"
+#include "RobotArmWidget.h"
 #include "SignalChartWidget.h"
 
 #include <QAction>
@@ -76,6 +77,7 @@ MainWindow::MainWindow(QWidget *parent)
     , measurementNoiseLabel(nullptr)
     , measurementNoiseSpinBox(nullptr)
     , signalChart(nullptr)
+    , robotArmWidget(nullptr)
     , explanationBrowser(nullptr)
     , refreshTimer(new QTimer(this))
     , isPlaying(false)
@@ -93,7 +95,7 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowTitle(QStringLiteral("机械臂滤波可视化教学工具"));
     resize(1280, 800);
     setMinimumSize(1024, 640);
-    statusBar()->showMessage(QStringLiteral("阶段 5：传感器融合滤波器已接入"));
+    statusBar()->showMessage(QStringLiteral("阶段 6：机械臂动画已接入"));
 }
 
 MainWindow::~MainWindow()
@@ -313,8 +315,10 @@ void MainWindow::setupCentralLayout()
     visualHint->setAlignment(Qt::AlignCenter);
     visualHint->setWordWrap(true);
     signalChart = new SignalChartWidget(visualFrame);
+    robotArmWidget = new RobotArmWidget(visualFrame);
     visualLayout->addWidget(visualTitle);
     visualLayout->addWidget(signalChart, 1);
+    visualLayout->addWidget(robotArmWidget, 1);
     visualLayout->addWidget(visualHint);
 
     auto *parameterFrame = new QFrame(workSplitter);
@@ -731,6 +735,7 @@ void MainWindow::resetSimulation()
         activeFilter->reset();
     }
     signalChart->clear();
+    robotArmWidget->clearTrajectories();
     updatePlaybackState();
     statusBar()->showMessage(QStringLiteral("演示状态已重置"));
 }
@@ -743,5 +748,6 @@ void MainWindow::advanceFrame()
         frame.filteredValue = activeFilter->processFrame(frame, 1.0 / signalGenerator.sampleRate());
     }
     signalChart->appendFrame(frame);
+    robotArmWidget->updatePose(frame.noisyValue, frame.filteredValue);
     frameCounterValue->setText(QString::number(frameCounter));
 }

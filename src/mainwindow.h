@@ -22,6 +22,7 @@ class QDoubleSpinBox;
 class FilterBase;
 class QLabel;
 class QListWidget;
+class RobotArmWidget;
 class QSpinBox;
 class SignalChartWidget;
 class QTextBrowser;
@@ -98,6 +99,7 @@ private:
     QLabel *measurementNoiseLabel;
     QDoubleSpinBox *measurementNoiseSpinBox;
     SignalChartWidget *signalChart;
+    RobotArmWidget *robotArmWidget;
     QTextBrowser *explanationBrowser;
     SignalGenerator signalGenerator;
     std::unique_ptr<FilterBase> activeFilter;
