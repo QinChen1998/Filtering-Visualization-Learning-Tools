@@ -8,6 +8,8 @@
 #include <QStringList>
 #include <QVector>
 
+#include <memory>
+
 QT_BEGIN_NAMESPACE
 namespace Ui {
 class MainWindow;
@@ -16,8 +18,11 @@ QT_END_NAMESPACE
 
 class QAction;
 class QComboBox;
+class QDoubleSpinBox;
+class FilterBase;
 class QLabel;
 class QListWidget;
+class QSpinBox;
 class SignalChartWidget;
 class QTextBrowser;
 class QTimer;
@@ -44,6 +49,8 @@ private:
     void setupCentralLayout();
     void connectInteractions();
     void updateSelectedFilter(int row);
+    void configureActiveFilter();
+    void updateFilterParameterControls(int row);
     void updatePlaybackState();
     void updateSignalConfiguration();
     void resetSimulation();
@@ -68,9 +75,18 @@ private:
     QLabel *noiseModeValue;
     QLabel *playbackStateValue;
     QLabel *frameCounterValue;
+    QLabel *cutoffFrequencyLabel;
+    QDoubleSpinBox *cutoffFrequencySpinBox;
+    QLabel *windowSizeLabel;
+    QSpinBox *windowSizeSpinBox;
+    QLabel *alphaLabel;
+    QDoubleSpinBox *alphaSpinBox;
+    QLabel *hampelThresholdLabel;
+    QDoubleSpinBox *hampelThresholdSpinBox;
     SignalChartWidget *signalChart;
     QTextBrowser *explanationBrowser;
     SignalGenerator signalGenerator;
+    std::unique_ptr<FilterBase> activeFilter;
     QTimer *refreshTimer;
     bool isPlaying;
     int frameCounter;

@@ -1,10 +1,17 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 
+#include "EwmaFilter.h"
+#include "FilterBase.h"
+#include "HampelFilter.h"
+#include "LowPassFilter.h"
+#include "MedianFilter.h"
+#include "MovingAverageFilter.h"
 #include "SignalChartWidget.h"
 
 #include <QAction>
 #include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QFrame>
 #include <QHBoxLayout>
@@ -13,6 +20,7 @@
 #include <QSizePolicy>
 #include <QSignalBlocker>
 #include <QSplitter>
+#include <QSpinBox>
 #include <QStatusBar>
 #include <QStyle>
 #include <QTextBrowser>
@@ -40,6 +48,14 @@ MainWindow::MainWindow(QWidget *parent)
     , noiseModeValue(nullptr)
     , playbackStateValue(nullptr)
     , frameCounterValue(nullptr)
+    , cutoffFrequencyLabel(nullptr)
+    , cutoffFrequencySpinBox(nullptr)
+    , windowSizeLabel(nullptr)
+    , windowSizeSpinBox(nullptr)
+    , alphaLabel(nullptr)
+    , alphaSpinBox(nullptr)
+    , hampelThresholdLabel(nullptr)
+    , hampelThresholdSpinBox(nullptr)
     , signalChart(nullptr)
     , explanationBrowser(nullptr)
     , refreshTimer(new QTimer(this))
@@ -52,12 +68,13 @@ MainWindow::MainWindow(QWidget *parent)
     setupCentralLayout();
     connectInteractions();
     updateSelectedFilter(0);
+    updateSignalConfiguration();
     updatePlaybackState();
 
     setWindowTitle(QStringLiteral("机械臂滤波可视化教学工具"));
     resize(1280, 800);
     setMinimumSize(1024, 640);
-    statusBar()->showMessage(QStringLiteral("阶段 2：实时信号数据流已就绪"));
+    statusBar()->showMessage(QStringLiteral("阶段 3：基础滤波器已接入"));
 }
 
 MainWindow::~MainWindow()
@@ -76,7 +93,9 @@ void MainWindow::setupFilterCatalog()
             QStringLiteral("<h3>一阶低通滤波器</h3>"
                            "<p><b>解决的问题：</b>削弱高频噪声，让关节角度、速度或控制量更平滑。</p>"
                            "<p><b>机械臂场景：</b>编码器读数轻微抖动、末端轨迹显示抖动。</p>"
-                           "<p><b>参数影响：</b>截止频率越低越平滑，但响应越慢；截止频率越高越灵敏，但噪声保留更多。</p>")
+                           "<p><b>核心公式：</b>y[n] = y[n-1] + alpha * (x[n] - y[n-1])，alpha 由截止频率和采样周期决定。</p>"
+                           "<p><b>参数影响：</b>截止频率越低越平滑，但响应越慢；截止频率越高越灵敏，但噪声保留更多。</p>"
+                           "<p><b>优缺点：</b>实现简单、实时性好；缺点是会带来相位滞后。</p>")
         },
         {
             QStringLiteral("滑动平均滤波器"),
@@ -86,7 +105,9 @@ void MainWindow::setupFilterCatalog()
             QStringLiteral("<h3>滑动平均滤波器</h3>"
                            "<p><b>解决的问题：</b>用固定长度窗口平均近期样本，降低随机噪声。</p>"
                            "<p><b>机械臂场景：</b>平滑速度指令、力传感器低幅随机噪声。</p>"
-                           "<p><b>参数影响：</b>窗口越大越平滑，同时引入更明显的延迟。</p>")
+                           "<p><b>核心公式：</b>y[n] = (x[n] + ... + x[n-N+1]) / N。</p>"
+                           "<p><b>参数影响：</b>窗口越大越平滑，同时引入更明显的延迟。</p>"
+                           "<p><b>优缺点：</b>直观稳定；缺点是对尖峰仍会被平均影响，且窗口越大越迟钝。</p>")
         },
         {
             QStringLiteral("EWMA 滤波器"),
@@ -96,7 +117,9 @@ void MainWindow::setupFilterCatalog()
             QStringLiteral("<h3>指数加权移动平均 EWMA</h3>"
                            "<p><b>解决的问题：</b>用指数权重保留历史趋势，计算量小，适合实时控制。</p>"
                            "<p><b>机械臂场景：</b>对控制指令做轻量平滑，避免突然抖动。</p>"
-                           "<p><b>参数影响：</b>alpha 越大越跟手，alpha 越小越平滑。</p>")
+                           "<p><b>核心公式：</b>y[n] = alpha * x[n] + (1 - alpha) * y[n-1]。</p>"
+                           "<p><b>参数影响：</b>alpha 越大越跟手，alpha 越小越平滑。</p>"
+                           "<p><b>优缺点：</b>状态量少、计算便宜；缺点是 alpha 需要按响应速度取舍。</p>")
         },
         {
             QStringLiteral("中值滤波器"),
@@ -106,7 +129,9 @@ void MainWindow::setupFilterCatalog()
             QStringLiteral("<h3>中值滤波器</h3>"
                            "<p><b>解决的问题：</b>抑制孤立尖峰，比均值类滤波更不容易被异常点拖偏。</p>"
                            "<p><b>机械臂场景：</b>力/力矩传感器偶发冲击、视觉测量离群点。</p>"
-                           "<p><b>参数影响：</b>窗口越大，尖峰抑制更强，但细节和响应速度会下降。</p>")
+                           "<p><b>核心公式：</b>y[n] = median(x[n-k] ... x[n+k])。</p>"
+                           "<p><b>参数影响：</b>窗口越大，尖峰抑制更强，但细节和响应速度会下降。</p>"
+                           "<p><b>优缺点：</b>抗离群点强；缺点是不适合保留非常快速的真实变化。</p>")
         },
         {
             QStringLiteral("Hampel 异常值滤波器"),
@@ -116,7 +141,9 @@ void MainWindow::setupFilterCatalog()
             QStringLiteral("<h3>Hampel 异常值滤波器</h3>"
                            "<p><b>解决的问题：</b>基于中位数和绝对偏差识别异常值，再用稳健估计替换。</p>"
                            "<p><b>机械臂场景：</b>接触检测中的短时尖峰、传感器偶发毛刺。</p>"
-                           "<p><b>参数影响：</b>阈值越小越敏感，但可能误判真实快速变化。</p>")
+                           "<p><b>核心公式：</b>若 |x - median| > k * 1.4826 * MAD，则用 median 替换。</p>"
+                           "<p><b>参数影响：</b>阈值越小越敏感，但可能误判真实快速变化。</p>"
+                           "<p><b>优缺点：</b>能稳健处理异常点；缺点是窗口和阈值需要结合场景调整。</p>")
         },
         {
             QStringLiteral("陷波滤波器"),
@@ -273,6 +300,39 @@ void MainWindow::setupCentralLayout()
     parameterLayout->addRow(QStringLiteral("播放状态"), playbackStateValue);
     parameterLayout->addRow(QStringLiteral("刷新帧"), frameCounterValue);
 
+    cutoffFrequencyLabel = new QLabel(QStringLiteral("截止频率"), parameterFrame);
+    cutoffFrequencySpinBox = new QDoubleSpinBox(parameterFrame);
+    cutoffFrequencySpinBox->setRange(0.1, 40.0);
+    cutoffFrequencySpinBox->setDecimals(2);
+    cutoffFrequencySpinBox->setSingleStep(0.5);
+    cutoffFrequencySpinBox->setSuffix(QStringLiteral(" Hz"));
+    cutoffFrequencySpinBox->setValue(2.0);
+    parameterLayout->addRow(cutoffFrequencyLabel, cutoffFrequencySpinBox);
+
+    windowSizeLabel = new QLabel(QStringLiteral("窗口大小"), parameterFrame);
+    windowSizeSpinBox = new QSpinBox(parameterFrame);
+    windowSizeSpinBox->setRange(1, 101);
+    windowSizeSpinBox->setSingleStep(2);
+    windowSizeSpinBox->setValue(9);
+    parameterLayout->addRow(windowSizeLabel, windowSizeSpinBox);
+
+    alphaLabel = new QLabel(QStringLiteral("alpha"), parameterFrame);
+    alphaSpinBox = new QDoubleSpinBox(parameterFrame);
+    alphaSpinBox->setRange(0.01, 1.0);
+    alphaSpinBox->setDecimals(3);
+    alphaSpinBox->setSingleStep(0.01);
+    alphaSpinBox->setValue(0.12);
+    parameterLayout->addRow(alphaLabel, alphaSpinBox);
+
+    hampelThresholdLabel = new QLabel(QStringLiteral("Hampel 阈值"), parameterFrame);
+    hampelThresholdSpinBox = new QDoubleSpinBox(parameterFrame);
+    hampelThresholdSpinBox->setRange(0.5, 8.0);
+    hampelThresholdSpinBox->setDecimals(1);
+    hampelThresholdSpinBox->setSingleStep(0.5);
+    hampelThresholdSpinBox->setSuffix(QStringLiteral(" MAD"));
+    hampelThresholdSpinBox->setValue(3.0);
+    parameterLayout->addRow(hampelThresholdLabel, hampelThresholdSpinBox);
+
     workSplitter->setStretchFactor(0, 0);
     workSplitter->setStretchFactor(1, 1);
     workSplitter->setStretchFactor(2, 0);
@@ -308,6 +368,26 @@ void MainWindow::connectInteractions()
     connect(resetAction, &QAction::triggered, this, &MainWindow::resetSimulation);
     connect(signalSelector, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::updateSignalConfiguration);
     connect(noiseSelector, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::updateSignalConfiguration);
+    connect(cutoffFrequencySpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this]() {
+        configureActiveFilter();
+        resetSimulation();
+    });
+    connect(windowSizeSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, [this]() {
+        if (windowSizeSpinBox->value() % 2 == 0) {
+            windowSizeSpinBox->setValue(windowSizeSpinBox->value() + 1);
+            return;
+        }
+        configureActiveFilter();
+        resetSimulation();
+    });
+    connect(alphaSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this]() {
+        configureActiveFilter();
+        resetSimulation();
+    });
+    connect(hampelThresholdSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this]() {
+        configureActiveFilter();
+        resetSimulation();
+    });
     connect(filterList, &QListWidget::currentRowChanged, this, &MainWindow::updateSelectedFilter);
     connect(sceneSelector, &QComboBox::currentTextChanged, this, [this](const QString &scene) {
         for (int row = 0; row < filterCatalog.size(); ++row) {
@@ -329,11 +409,10 @@ void MainWindow::updateSelectedFilter(int row)
     filterNameValue->setText(filter.name);
     sceneValue->setText(filter.scene);
     sampleRateValue->setText(filter.sampleRate);
-    parameterSummaryValue->setText(filter.parameters.join(QStringLiteral(" / ")));
     visualTitle->setText(QStringLiteral("可视化区域 - %1").arg(filter.name));
     visualHint->setText(QStringLiteral("%1 场景的实时曲线、动画或图像结果将在这里接入。").arg(filter.scene));
     explanationBrowser->setHtml(filter.explanationHtml
-                                + QStringLiteral("<p><b>当前阶段：</b>界面联动已完成，后续阶段将接入真实信号和滤波输出。</p>"));
+                                + QStringLiteral("<p><b>当前阶段：</b>前五个基础平滑滤波器已接入真实输出曲线；其他滤波器将在后续阶段实现。</p>"));
 
     {
         const QSignalBlocker blocker(sceneSelector);
@@ -343,7 +422,59 @@ void MainWindow::updateSelectedFilter(int row)
         }
     }
 
+    updateFilterParameterControls(row);
+    configureActiveFilter();
+    resetSimulation();
     statusBar()->showMessage(QStringLiteral("当前滤波器：%1").arg(filter.name));
+}
+
+void MainWindow::configureActiveFilter()
+{
+    const int row = filterList->currentRow();
+    switch (row) {
+    case 0:
+        activeFilter = std::make_unique<LowPassFilter>(cutoffFrequencySpinBox->value());
+        break;
+    case 1:
+        activeFilter = std::make_unique<MovingAverageFilter>(windowSizeSpinBox->value());
+        break;
+    case 2:
+        activeFilter = std::make_unique<EwmaFilter>(alphaSpinBox->value());
+        break;
+    case 3:
+        activeFilter = std::make_unique<MedianFilter>(windowSizeSpinBox->value());
+        break;
+    case 4:
+        activeFilter = std::make_unique<HampelFilter>(windowSizeSpinBox->value(), hampelThresholdSpinBox->value());
+        break;
+    default:
+        activeFilter = std::make_unique<EwmaFilter>(alphaSpinBox->value());
+        break;
+    }
+
+    if (row > 4) {
+        parameterSummaryValue->setText(QStringLiteral("后续阶段实现；当前用 %1 预览输出").arg(activeFilter->parameterSummary()));
+    } else if (activeFilter) {
+        parameterSummaryValue->setText(activeFilter->parameterSummary());
+    }
+}
+
+void MainWindow::updateFilterParameterControls(int row)
+{
+    const bool usesCutoff = row == 0;
+    const bool usesWindow = row == 1 || row == 3 || row == 4;
+    const bool usesAlpha = row == 2 || row > 4;
+    const bool usesHampelThreshold = row == 4;
+
+    cutoffFrequencyLabel->setVisible(usesCutoff);
+    cutoffFrequencySpinBox->setVisible(usesCutoff);
+    windowSizeLabel->setVisible(usesWindow);
+    windowSizeSpinBox->setVisible(usesWindow);
+    alphaLabel->setVisible(usesAlpha);
+    alphaSpinBox->setVisible(usesAlpha);
+    hampelThresholdLabel->setVisible(usesHampelThreshold);
+    hampelThresholdSpinBox->setVisible(usesHampelThreshold);
+
 }
 
 void MainWindow::updatePlaybackState()
@@ -410,6 +541,9 @@ void MainWindow::resetSimulation()
 {
     frameCounter = 0;
     signalGenerator.reset();
+    if (activeFilter) {
+        activeFilter->reset();
+    }
     signalChart->clear();
     updatePlaybackState();
     statusBar()->showMessage(QStringLiteral("演示状态已重置"));
@@ -418,6 +552,10 @@ void MainWindow::resetSimulation()
 void MainWindow::advanceFrame()
 {
     ++frameCounter;
-    signalChart->appendFrame(signalGenerator.nextFrame());
+    SignalFrame frame = signalGenerator.nextFrame();
+    if (activeFilter) {
+        frame.filteredValue = activeFilter->process(frame.noisyValue, 1.0 / signalGenerator.sampleRate());
+    }
+    signalChart->appendFrame(frame);
     frameCounterValue->setText(QString::number(frameCounter));
 }
