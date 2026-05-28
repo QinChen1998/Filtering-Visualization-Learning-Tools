@@ -2,6 +2,7 @@
 #include "ui_mainwindow.h"
 
 #include "BandPassFilter.h"
+#include "BandStopFilter.h"
 #include "EwmaFilter.h"
 #include "FilterBase.h"
 #include "HampelFilter.h"
@@ -198,6 +199,18 @@ void MainWindow::setupFilterCatalog()
                            "<p><b>核心公式：</b>使用二阶 biquad 带通结构，按低/高截止频率换算中心频率和 Q 值。</p>"
                            "<p><b>参数影响：</b>频带过窄可能漏掉目标动态，过宽则噪声保留更多。</p>"
                            "<p><b>优缺点：</b>适合突出振动频段；缺点是会削弱直流和慢变化趋势。</p>")
+        },
+        {
+            QStringLiteral("带阻滤波器"),
+            QStringLiteral("关节状态滤波"),
+            QStringLiteral("500 Hz"),
+            {QStringLiteral("低截止频率"), QStringLiteral("高截止频率"), QStringLiteral("采样频率")},
+            QStringLiteral("<h3>带阻滤波器</h3>"
+                           "<p><b>解决的问题：</b>抑制某一段频率范围内的干扰，同时保留阻带之外的低频趋势和高频成分。</p>"
+                           "<p><b>机械臂场景：</b>结构振动集中在一段频带时，可用来削弱该频段对关节测量或力传感器读数的影响。</p>"
+                           "<p><b>核心公式：</b>使用二阶 biquad 带阻结构，按低/高截止频率换算中心频率和 Q 值。</p>"
+                           "<p><b>参数影响：</b>阻带越宽抑制范围越大，但更容易削弱有用动态；阻带越窄越精准，但需要更准确地知道干扰频段。</p>"
+                           "<p><b>优缺点：</b>适合一段已知频率干扰；缺点是参数设置不当会误伤有效信号。</p>")
         },
         {
             QStringLiteral("图像滤波"),
@@ -490,6 +503,8 @@ void MainWindow::updateSelectedFilter(int row)
         stageNote += QStringLiteral("<pre>简化频率响应：低频 ───── 中心频率附近 ▼ 深衰减 ───── 高频</pre>");
     } else if (row == 8) {
         stageNote += QStringLiteral("<pre>简化频率响应：低频 ▼ 衰减 ── 通带 ── 高频 ▼ 衰减</pre>");
+    } else if (row == 9) {
+        stageNote += QStringLiteral("<pre>简化频率响应：低频 ── 阻带 ▼ 衰减 ── 高频</pre>");
     }
     explanationBrowser->setHtml(filter.explanationHtml + stageNote);
 
@@ -532,12 +547,15 @@ void MainWindow::configureActiveFilter()
     case 8:
         activeFilter = std::make_unique<BandPassFilter>(lowCutoffSpinBox->value(), highCutoffSpinBox->value());
         break;
+    case 9:
+        activeFilter = std::make_unique<BandStopFilter>(lowCutoffSpinBox->value(), highCutoffSpinBox->value());
+        break;
     default:
         activeFilter = std::make_unique<EwmaFilter>(alphaSpinBox->value());
         break;
     }
 
-    if (row == 6 || row == 7 || row == 9) {
+    if (row == 6 || row == 7 || row == 10) {
         parameterSummaryValue->setText(QStringLiteral("后续阶段实现；当前用 %1 预览输出").arg(activeFilter->parameterSummary()));
     } else if (activeFilter) {
         parameterSummaryValue->setText(activeFilter->parameterSummary());
@@ -548,10 +566,10 @@ void MainWindow::updateFilterParameterControls(int row)
 {
     const bool usesCutoff = row == 0;
     const bool usesWindow = row == 1 || row == 3 || row == 4;
-    const bool usesAlpha = row == 2 || row == 6 || row == 7 || row == 9;
+    const bool usesAlpha = row == 2 || row == 6 || row == 7 || row == 10;
     const bool usesHampelThreshold = row == 4;
     const bool usesNotch = row == 5;
-    const bool usesBandPass = row == 8;
+    const bool usesBandEdges = row == 8 || row == 9;
 
     cutoffFrequencyLabel->setVisible(usesCutoff);
     cutoffFrequencySpinBox->setVisible(usesCutoff);
@@ -565,10 +583,10 @@ void MainWindow::updateFilterParameterControls(int row)
     centerFrequencySpinBox->setVisible(usesNotch);
     bandwidthLabel->setVisible(usesNotch);
     bandwidthSpinBox->setVisible(usesNotch);
-    lowCutoffLabel->setVisible(usesBandPass);
-    lowCutoffSpinBox->setVisible(usesBandPass);
-    highCutoffLabel->setVisible(usesBandPass);
-    highCutoffSpinBox->setVisible(usesBandPass);
+    lowCutoffLabel->setVisible(usesBandEdges);
+    lowCutoffSpinBox->setVisible(usesBandEdges);
+    highCutoffLabel->setVisible(usesBandEdges);
+    highCutoffSpinBox->setVisible(usesBandEdges);
 }
 
 void MainWindow::updatePlaybackState()

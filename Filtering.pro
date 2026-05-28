@@ -21,6 +21,7 @@ INCLUDEPATH += \
 SOURCES += \
     src/demos/SignalGenerator.cpp \
     src/filters/BandPassFilter.cpp \
+    src/filters/BandStopFilter.cpp \
     src/filters/EwmaFilter.cpp \
     src/filters/HampelFilter.cpp \
     src/filters/LowPassFilter.cpp \
@@ -35,6 +36,7 @@ HEADERS += \
     src/core/SignalFrame.h \
     src/demos/SignalGenerator.h \
     src/filters/BandPassFilter.h \
+    src/filters/BandStopFilter.h \
     src/filters/EwmaFilter.h \
     src/filters/FilterBase.h \
     src/filters/HampelFilter.h \
