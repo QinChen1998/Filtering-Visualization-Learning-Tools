@@ -1,6 +1,8 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 
+#include "SignalChartWidget.h"
+
 #include <QAction>
 #include <QComboBox>
 #include <QFormLayout>
@@ -22,6 +24,8 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
     , sceneSelector(nullptr)
+    , signalSelector(nullptr)
+    , noiseSelector(nullptr)
     , playAction(nullptr)
     , pauseAction(nullptr)
     , resetAction(nullptr)
@@ -32,8 +36,11 @@ MainWindow::MainWindow(QWidget *parent)
     , sceneValue(nullptr)
     , sampleRateValue(nullptr)
     , parameterSummaryValue(nullptr)
+    , signalModeValue(nullptr)
+    , noiseModeValue(nullptr)
     , playbackStateValue(nullptr)
     , frameCounterValue(nullptr)
+    , signalChart(nullptr)
     , explanationBrowser(nullptr)
     , refreshTimer(new QTimer(this))
     , isPlaying(false)
@@ -50,7 +57,7 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowTitle(QStringLiteral("机械臂滤波可视化教学工具"));
     resize(1280, 800);
     setMinimumSize(1024, 640);
-    statusBar()->showMessage(QStringLiteral("阶段 1：主界面框架已就绪"));
+    statusBar()->showMessage(QStringLiteral("阶段 2：实时信号数据流已就绪"));
 }
 
 MainWindow::~MainWindow()
@@ -181,6 +188,32 @@ void MainWindow::setupToolbar()
     toolBar->addWidget(sceneSelector);
     toolBar->addSeparator();
 
+    toolBar->addWidget(new QLabel(QStringLiteral("信号"), toolBar));
+    signalSelector = new QComboBox(toolBar);
+    signalSelector->addItems({
+        QStringLiteral("正弦"),
+        QStringLiteral("阶跃"),
+        QStringLiteral("斜坡"),
+        QStringLiteral("脉冲"),
+        QStringLiteral("混合"),
+    });
+    signalSelector->setMinimumWidth(100);
+    toolBar->addWidget(signalSelector);
+
+    toolBar->addWidget(new QLabel(QStringLiteral("噪声"), toolBar));
+    noiseSelector = new QComboBox(toolBar);
+    noiseSelector->addItems({
+        QStringLiteral("无"),
+        QStringLiteral("高斯"),
+        QStringLiteral("尖峰"),
+        QStringLiteral("周期"),
+        QStringLiteral("混合"),
+    });
+    noiseSelector->setCurrentIndex(1);
+    noiseSelector->setMinimumWidth(100);
+    toolBar->addWidget(noiseSelector);
+    toolBar->addSeparator();
+
     playAction = toolBar->addAction(style()->standardIcon(QStyle::SP_MediaPlay), QStringLiteral("播放"));
     pauseAction = toolBar->addAction(style()->standardIcon(QStyle::SP_MediaPause), QStringLiteral("暂停"));
     resetAction = toolBar->addAction(style()->standardIcon(QStyle::SP_BrowserReload), QStringLiteral("重置"));
@@ -213,8 +246,10 @@ void MainWindow::setupCentralLayout()
     visualHint = new QLabel(QStringLiteral("曲线图、机械臂动画和图像滤波结果将在这里展示。"), visualFrame);
     visualHint->setAlignment(Qt::AlignCenter);
     visualHint->setWordWrap(true);
+    signalChart = new SignalChartWidget(visualFrame);
     visualLayout->addWidget(visualTitle);
-    visualLayout->addWidget(visualHint, 1);
+    visualLayout->addWidget(signalChart, 1);
+    visualLayout->addWidget(visualHint);
 
     auto *parameterFrame = new QFrame(workSplitter);
     parameterFrame->setFrameShape(QFrame::StyledPanel);
@@ -224,6 +259,8 @@ void MainWindow::setupCentralLayout()
     sceneValue = new QLabel(parameterFrame);
     sampleRateValue = new QLabel(parameterFrame);
     parameterSummaryValue = new QLabel(parameterFrame);
+    signalModeValue = new QLabel(parameterFrame);
+    noiseModeValue = new QLabel(parameterFrame);
     playbackStateValue = new QLabel(parameterFrame);
     frameCounterValue = new QLabel(parameterFrame);
     parameterSummaryValue->setWordWrap(true);
@@ -231,6 +268,8 @@ void MainWindow::setupCentralLayout()
     parameterLayout->addRow(QStringLiteral("场景"), sceneValue);
     parameterLayout->addRow(QStringLiteral("采样频率"), sampleRateValue);
     parameterLayout->addRow(QStringLiteral("参数区"), parameterSummaryValue);
+    parameterLayout->addRow(QStringLiteral("信号类型"), signalModeValue);
+    parameterLayout->addRow(QStringLiteral("噪声类型"), noiseModeValue);
     parameterLayout->addRow(QStringLiteral("播放状态"), playbackStateValue);
     parameterLayout->addRow(QStringLiteral("刷新帧"), frameCounterValue);
 
@@ -267,6 +306,8 @@ void MainWindow::connectInteractions()
         updatePlaybackState();
     });
     connect(resetAction, &QAction::triggered, this, &MainWindow::resetSimulation);
+    connect(signalSelector, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::updateSignalConfiguration);
+    connect(noiseSelector, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::updateSignalConfiguration);
     connect(filterList, &QListWidget::currentRowChanged, this, &MainWindow::updateSelectedFilter);
     connect(sceneSelector, &QComboBox::currentTextChanged, this, [this](const QString &scene) {
         for (int row = 0; row < filterCatalog.size(); ++row) {
@@ -313,9 +354,63 @@ void MainWindow::updatePlaybackState()
     frameCounterValue->setText(QString::number(frameCounter));
 }
 
+void MainWindow::updateSignalConfiguration()
+{
+    const int signalIndex = signalSelector->currentIndex();
+    switch (signalIndex) {
+    case 0:
+        signalGenerator.setSignalMode(SignalGenerator::SignalMode::Sine);
+        break;
+    case 1:
+        signalGenerator.setSignalMode(SignalGenerator::SignalMode::Step);
+        break;
+    case 2:
+        signalGenerator.setSignalMode(SignalGenerator::SignalMode::Ramp);
+        break;
+    case 3:
+        signalGenerator.setSignalMode(SignalGenerator::SignalMode::Pulse);
+        break;
+    case 4:
+        signalGenerator.setSignalMode(SignalGenerator::SignalMode::Mixed);
+        break;
+    default:
+        signalGenerator.setSignalMode(SignalGenerator::SignalMode::Sine);
+        break;
+    }
+
+    const int noiseIndex = noiseSelector->currentIndex();
+    switch (noiseIndex) {
+    case 0:
+        signalGenerator.setNoiseMode(SignalGenerator::NoiseMode::None);
+        break;
+    case 1:
+        signalGenerator.setNoiseMode(SignalGenerator::NoiseMode::Gaussian);
+        break;
+    case 2:
+        signalGenerator.setNoiseMode(SignalGenerator::NoiseMode::Spike);
+        break;
+    case 3:
+        signalGenerator.setNoiseMode(SignalGenerator::NoiseMode::Periodic);
+        break;
+    case 4:
+        signalGenerator.setNoiseMode(SignalGenerator::NoiseMode::Mixed);
+        break;
+    default:
+        signalGenerator.setNoiseMode(SignalGenerator::NoiseMode::Gaussian);
+        break;
+    }
+
+    signalModeValue->setText(signalSelector->currentText());
+    noiseModeValue->setText(noiseSelector->currentText());
+    resetSimulation();
+    statusBar()->showMessage(QStringLiteral("信号配置已更新：%1 / %2").arg(signalSelector->currentText(), noiseSelector->currentText()));
+}
+
 void MainWindow::resetSimulation()
 {
     frameCounter = 0;
+    signalGenerator.reset();
+    signalChart->clear();
     updatePlaybackState();
     statusBar()->showMessage(QStringLiteral("演示状态已重置"));
 }
@@ -323,5 +418,6 @@ void MainWindow::resetSimulation()
 void MainWindow::advanceFrame()
 {
     ++frameCounter;
+    signalChart->appendFrame(signalGenerator.nextFrame());
     frameCounterValue->setText(QString::number(frameCounter));
 }

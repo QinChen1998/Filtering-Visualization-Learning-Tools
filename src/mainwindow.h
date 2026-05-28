@@ -1,6 +1,8 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include "SignalGenerator.h"
+
 #include <QMainWindow>
 #include <QString>
 #include <QStringList>
@@ -16,6 +18,7 @@ class QAction;
 class QComboBox;
 class QLabel;
 class QListWidget;
+class SignalChartWidget;
 class QTextBrowser;
 class QTimer;
 
@@ -42,12 +45,15 @@ private:
     void connectInteractions();
     void updateSelectedFilter(int row);
     void updatePlaybackState();
+    void updateSignalConfiguration();
     void resetSimulation();
     void advanceFrame();
 
     Ui::MainWindow *ui;
     QVector<FilterInfo> filterCatalog;
     QComboBox *sceneSelector;
+    QComboBox *signalSelector;
+    QComboBox *noiseSelector;
     QAction *playAction;
     QAction *pauseAction;
     QAction *resetAction;
@@ -58,9 +64,13 @@ private:
     QLabel *sceneValue;
     QLabel *sampleRateValue;
     QLabel *parameterSummaryValue;
+    QLabel *signalModeValue;
+    QLabel *noiseModeValue;
     QLabel *playbackStateValue;
     QLabel *frameCounterValue;
+    SignalChartWidget *signalChart;
     QTextBrowser *explanationBrowser;
+    SignalGenerator signalGenerator;
     QTimer *refreshTimer;
     bool isPlaying;
     int frameCounter;
