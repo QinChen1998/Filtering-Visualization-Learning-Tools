@@ -53,6 +53,8 @@ private:
     void updateFilterParameterControls(int row);
     void updatePlaybackState();
     void updateSignalConfiguration();
+    bool isFusionFilterSelected() const;
+    SignalFrame nextFusionFrame();
     void resetSimulation();
     void advanceFrame();
 
@@ -91,6 +93,10 @@ private:
     QDoubleSpinBox *lowCutoffSpinBox;
     QLabel *highCutoffLabel;
     QDoubleSpinBox *highCutoffSpinBox;
+    QLabel *processNoiseLabel;
+    QDoubleSpinBox *processNoiseSpinBox;
+    QLabel *measurementNoiseLabel;
+    QDoubleSpinBox *measurementNoiseSpinBox;
     SignalChartWidget *signalChart;
     QTextBrowser *explanationBrowser;
     SignalGenerator signalGenerator;

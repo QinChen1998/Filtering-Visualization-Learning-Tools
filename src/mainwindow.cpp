@@ -3,9 +3,11 @@
 
 #include "BandPassFilter.h"
 #include "BandStopFilter.h"
+#include "ComplementaryFilter.h"
 #include "EwmaFilter.h"
 #include "FilterBase.h"
 #include "HampelFilter.h"
+#include "KalmanFilter1D.h"
 #include "LowPassFilter.h"
 #include "MedianFilter.h"
 #include "MovingAverageFilter.h"
@@ -20,6 +22,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
+#include <QRandomGenerator>
 #include <QSizePolicy>
 #include <QSignalBlocker>
 #include <QSplitter>
@@ -30,6 +33,7 @@
 #include <QTimer>
 #include <QToolBar>
 #include <QVBoxLayout>
+#include <QtMath>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -67,6 +71,10 @@ MainWindow::MainWindow(QWidget *parent)
     , lowCutoffSpinBox(nullptr)
     , highCutoffLabel(nullptr)
     , highCutoffSpinBox(nullptr)
+    , processNoiseLabel(nullptr)
+    , processNoiseSpinBox(nullptr)
+    , measurementNoiseLabel(nullptr)
+    , measurementNoiseSpinBox(nullptr)
     , signalChart(nullptr)
     , explanationBrowser(nullptr)
     , refreshTimer(new QTimer(this))
@@ -85,7 +93,7 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowTitle(QStringLiteral("机械臂滤波可视化教学工具"));
     resize(1280, 800);
     setMinimumSize(1024, 640);
-    statusBar()->showMessage(QStringLiteral("阶段 4：频域相关滤波器已接入"));
+    statusBar()->showMessage(QStringLiteral("阶段 5：传感器融合滤波器已接入"));
 }
 
 MainWindow::~MainWindow()
@@ -176,7 +184,9 @@ void MainWindow::setupFilterCatalog()
             QStringLiteral("<h3>互补滤波器</h3>"
                            "<p><b>解决的问题：</b>把低频稳定传感器和高频响应传感器结合起来。</p>"
                            "<p><b>机械臂场景：</b>IMU 与编码器姿态估计融合。</p>"
-                           "<p><b>参数影响：</b>系数决定更信任哪一路传感器。</p>")
+                           "<p><b>核心公式：</b>prediction = 上次融合值 + 传感器 B 的快速变化量；y = alpha * prediction + (1 - alpha) * 传感器 A。</p>"
+                           "<p><b>参数影响：</b>alpha 越大越信任高频响应，alpha 越小越贴近低频稳定测量。</p>"
+                           "<p><b>优缺点：</b>直观、计算量低；缺点是 alpha 需要按传感器特性调节。</p>")
         },
         {
             QStringLiteral("一维卡尔曼滤波器"),
@@ -186,7 +196,9 @@ void MainWindow::setupFilterCatalog()
             QStringLiteral("<h3>一维卡尔曼滤波器</h3>"
                            "<p><b>解决的问题：</b>在模型预测和带噪测量之间动态分配信任。</p>"
                            "<p><b>机械臂场景：</b>位置、速度或视觉目标的一维估计。</p>"
-                           "<p><b>参数影响：</b>Q 越大越信任新变化，R 越大越不信任测量。</p>")
+                           "<p><b>核心公式：</b>先用 P = P + Q 预测不确定性，再用 K = P / (P + R) 计算卡尔曼增益。</p>"
+                           "<p><b>参数影响：</b>Q 越大越信任新变化，R 越大越不信任测量。</p>"
+                           "<p><b>优缺点：</b>能自适应平衡平滑和响应；缺点是 Q/R 没有万能值，需要结合噪声模型调参。</p>")
         },
         {
             QStringLiteral("带通滤波器"),
@@ -396,6 +408,22 @@ void MainWindow::setupCentralLayout()
     highCutoffSpinBox->setValue(12.0);
     parameterLayout->addRow(highCutoffLabel, highCutoffSpinBox);
 
+    processNoiseLabel = new QLabel(QStringLiteral("过程噪声 Q"), parameterFrame);
+    processNoiseSpinBox = new QDoubleSpinBox(parameterFrame);
+    processNoiseSpinBox->setRange(0.0001, 1.0);
+    processNoiseSpinBox->setDecimals(4);
+    processNoiseSpinBox->setSingleStep(0.001);
+    processNoiseSpinBox->setValue(0.01);
+    parameterLayout->addRow(processNoiseLabel, processNoiseSpinBox);
+
+    measurementNoiseLabel = new QLabel(QStringLiteral("测量噪声 R"), parameterFrame);
+    measurementNoiseSpinBox = new QDoubleSpinBox(parameterFrame);
+    measurementNoiseSpinBox->setRange(0.0001, 2.0);
+    measurementNoiseSpinBox->setDecimals(4);
+    measurementNoiseSpinBox->setSingleStep(0.01);
+    measurementNoiseSpinBox->setValue(0.08);
+    parameterLayout->addRow(measurementNoiseLabel, measurementNoiseSpinBox);
+
     workSplitter->setStretchFactor(0, 0);
     workSplitter->setStretchFactor(1, 1);
     workSplitter->setStretchFactor(2, 0);
@@ -475,6 +503,14 @@ void MainWindow::connectInteractions()
         configureActiveFilter();
         resetSimulation();
     });
+    connect(processNoiseSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this]() {
+        configureActiveFilter();
+        resetSimulation();
+    });
+    connect(measurementNoiseSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this]() {
+        configureActiveFilter();
+        resetSimulation();
+    });
     connect(filterList, &QListWidget::currentRowChanged, this, &MainWindow::updateSelectedFilter);
     connect(sceneSelector, &QComboBox::currentTextChanged, this, [this](const QString &scene) {
         for (int row = 0; row < filterCatalog.size(); ++row) {
@@ -498,9 +534,11 @@ void MainWindow::updateSelectedFilter(int row)
     sampleRateValue->setText(filter.sampleRate);
     visualTitle->setText(QStringLiteral("可视化区域 - %1").arg(filter.name));
     visualHint->setText(QStringLiteral("%1 场景的实时曲线、动画或图像结果将在这里接入。").arg(filter.scene));
-    QString stageNote = QStringLiteral("<p><b>当前阶段：</b>基础平滑滤波器、陷波滤波器和带通滤波器已接入真实输出曲线；传感器融合和图像滤波将在后续阶段实现。</p>");
+    QString stageNote = QStringLiteral("<p><b>当前阶段：</b>基础平滑、频域滤波和传感器融合滤波器已接入真实输出曲线；图像滤波将在后续阶段实现。</p>");
     if (row == 5) {
         stageNote += QStringLiteral("<pre>简化频率响应：低频 ───── 中心频率附近 ▼ 深衰减 ───── 高频</pre>");
+    } else if (row == 6 || row == 7) {
+        stageNote += QStringLiteral("<p><b>融合曲线说明：</b>蓝色为真实值，红色为慢漂移但较稳定的传感器 A，紫色为高频响应快但噪声更大的传感器 B，绿色为融合结果。</p>");
     } else if (row == 8) {
         stageNote += QStringLiteral("<pre>简化频率响应：低频 ▼ 衰减 ── 通带 ── 高频 ▼ 衰减</pre>");
     } else if (row == 9) {
@@ -544,6 +582,12 @@ void MainWindow::configureActiveFilter()
     case 5:
         activeFilter = std::make_unique<NotchFilter>(centerFrequencySpinBox->value(), bandwidthSpinBox->value());
         break;
+    case 6:
+        activeFilter = std::make_unique<ComplementaryFilter>(alphaSpinBox->value());
+        break;
+    case 7:
+        activeFilter = std::make_unique<KalmanFilter1D>(processNoiseSpinBox->value(), measurementNoiseSpinBox->value());
+        break;
     case 8:
         activeFilter = std::make_unique<BandPassFilter>(lowCutoffSpinBox->value(), highCutoffSpinBox->value());
         break;
@@ -555,7 +599,7 @@ void MainWindow::configureActiveFilter()
         break;
     }
 
-    if (row == 6 || row == 7 || row == 10) {
+    if (row == 10) {
         parameterSummaryValue->setText(QStringLiteral("后续阶段实现；当前用 %1 预览输出").arg(activeFilter->parameterSummary()));
     } else if (activeFilter) {
         parameterSummaryValue->setText(activeFilter->parameterSummary());
@@ -570,6 +614,7 @@ void MainWindow::updateFilterParameterControls(int row)
     const bool usesHampelThreshold = row == 4;
     const bool usesNotch = row == 5;
     const bool usesBandEdges = row == 8 || row == 9;
+    const bool usesKalman = row == 7;
 
     cutoffFrequencyLabel->setVisible(usesCutoff);
     cutoffFrequencySpinBox->setVisible(usesCutoff);
@@ -587,6 +632,10 @@ void MainWindow::updateFilterParameterControls(int row)
     lowCutoffSpinBox->setVisible(usesBandEdges);
     highCutoffLabel->setVisible(usesBandEdges);
     highCutoffSpinBox->setVisible(usesBandEdges);
+    processNoiseLabel->setVisible(usesKalman);
+    processNoiseSpinBox->setVisible(usesKalman);
+    measurementNoiseLabel->setVisible(usesKalman);
+    measurementNoiseSpinBox->setVisible(usesKalman);
 }
 
 void MainWindow::updatePlaybackState()
@@ -649,6 +698,31 @@ void MainWindow::updateSignalConfiguration()
     statusBar()->showMessage(QStringLiteral("信号配置已更新：%1 / %2").arg(signalSelector->currentText(), noiseSelector->currentText()));
 }
 
+bool MainWindow::isFusionFilterSelected() const
+{
+    const int row = filterList ? filterList->currentRow() : -1;
+    return row == 6 || row == 7;
+}
+
+SignalFrame MainWindow::nextFusionFrame()
+{
+    SignalFrame baseFrame = signalGenerator.nextFrame();
+    const double t = baseFrame.timeSeconds;
+    const double trueValue = baseFrame.referenceValue;
+    const double slowDrift = 0.35 * qSin(0.18 * t) + 0.10 * qSin(0.05 * t);
+    const double sensorANoise = (QRandomGenerator::global()->generateDouble() - 0.5) * 0.08;
+    const double sensorBNoise = (QRandomGenerator::global()->generateDouble() - 0.5) * 0.55;
+
+    SignalFrame frame;
+    frame.timeSeconds = t;
+    frame.referenceValue = trueValue;
+    frame.noisyValue = trueValue + slowDrift + sensorANoise;
+    frame.auxiliaryValue = trueValue + sensorBNoise + 0.10 * qSin(18.0 * t);
+    frame.filteredValue = frame.noisyValue;
+    frame.hasAuxiliaryValue = true;
+    return frame;
+}
+
 void MainWindow::resetSimulation()
 {
     frameCounter = 0;
@@ -664,9 +738,9 @@ void MainWindow::resetSimulation()
 void MainWindow::advanceFrame()
 {
     ++frameCounter;
-    SignalFrame frame = signalGenerator.nextFrame();
+    SignalFrame frame = isFusionFilterSelected() ? nextFusionFrame() : signalGenerator.nextFrame();
     if (activeFilter) {
-        frame.filteredValue = activeFilter->process(frame.noisyValue, 1.0 / signalGenerator.sampleRate());
+        frame.filteredValue = activeFilter->processFrame(frame, 1.0 / signalGenerator.sampleRate());
     }
     signalChart->appendFrame(frame);
     frameCounterValue->setText(QString::number(frameCounter));

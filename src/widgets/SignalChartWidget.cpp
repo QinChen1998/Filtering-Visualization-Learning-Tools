@@ -67,9 +67,15 @@ void SignalChartWidget::paintEvent(QPaintEvent *event)
 
     double minValue = frames.first().referenceValue;
     double maxValue = frames.first().referenceValue;
+    bool hasAuxiliarySeries = false;
     for (const SignalFrame &frame : frames) {
         minValue = std::min({minValue, frame.referenceValue, frame.noisyValue, frame.filteredValue});
         maxValue = std::max({maxValue, frame.referenceValue, frame.noisyValue, frame.filteredValue});
+        if (frame.hasAuxiliaryValue) {
+            hasAuxiliarySeries = true;
+            minValue = std::min(minValue, frame.auxiliaryValue);
+            maxValue = std::max(maxValue, frame.auxiliaryValue);
+        }
     }
     if (qFuzzyCompare(minValue, maxValue)) {
         minValue -= 1.0;
@@ -98,21 +104,27 @@ void SignalChartWidget::paintEvent(QPaintEvent *event)
     drawSeries(painter, plotRect, minTime, maxTime, minValue, maxValue, 0, QColor(31, 119, 180));
     drawSeries(painter, plotRect, minTime, maxTime, minValue, maxValue, 1, QColor(214, 84, 73));
     drawSeries(painter, plotRect, minTime, maxTime, minValue, maxValue, 2, QColor(37, 151, 88));
+    if (hasAuxiliarySeries) {
+        drawSeries(painter, plotRect, minTime, maxTime, minValue, maxValue, 3, QColor(136, 92, 170));
+    }
 
     const int legendY = static_cast<int>(bounds.top() + 2);
     const QStringList labels = {
-        QStringLiteral("原始信号"),
-        QStringLiteral("带噪信号"),
-        QStringLiteral("滤波预览")
+        hasAuxiliarySeries ? QStringLiteral("真实值") : QStringLiteral("原始信号"),
+        hasAuxiliarySeries ? QStringLiteral("传感器 A") : QStringLiteral("带噪信号"),
+        hasAuxiliarySeries ? QStringLiteral("融合结果") : QStringLiteral("滤波输出"),
+        QStringLiteral("传感器 B")
     };
     const QList<QColor> colors = {
         QColor(31, 119, 180),
         QColor(214, 84, 73),
-        QColor(37, 151, 88)
+        QColor(37, 151, 88),
+        QColor(136, 92, 170)
     };
-    int legendX = static_cast<int>(bounds.right()) - 260;
+    const int legendCount = hasAuxiliarySeries ? 4 : 3;
+    int legendX = static_cast<int>(bounds.right()) - (legendCount == 4 ? 350 : 260);
     painter.setFont(font());
-    for (int i = 0; i < labels.size(); ++i) {
+    for (int i = 0; i < legendCount; ++i) {
         painter.setPen(QPen(colors.at(i), 3));
         painter.drawLine(QPointF(legendX, legendY + 8), QPointF(legendX + 22, legendY + 8));
         painter.setPen(QColor(32, 41, 57));
@@ -154,6 +166,8 @@ double SignalChartWidget::valueAt(const SignalFrame &frame, int seriesIndex) con
         return frame.noisyValue;
     case 2:
         return frame.filteredValue;
+    case 3:
+        return frame.hasAuxiliaryValue ? frame.auxiliaryValue : frame.filteredValue;
     default:
         return 0.0;
     }
