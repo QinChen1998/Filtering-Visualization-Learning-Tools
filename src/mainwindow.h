@@ -83,6 +83,14 @@ private:
     QDoubleSpinBox *alphaSpinBox;
     QLabel *hampelThresholdLabel;
     QDoubleSpinBox *hampelThresholdSpinBox;
+    QLabel *centerFrequencyLabel;
+    QDoubleSpinBox *centerFrequencySpinBox;
+    QLabel *bandwidthLabel;
+    QDoubleSpinBox *bandwidthSpinBox;
+    QLabel *lowCutoffLabel;
+    QDoubleSpinBox *lowCutoffSpinBox;
+    QLabel *highCutoffLabel;
+    QDoubleSpinBox *highCutoffSpinBox;
     SignalChartWidget *signalChart;
     QTextBrowser *explanationBrowser;
     SignalGenerator signalGenerator;

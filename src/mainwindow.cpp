@@ -1,12 +1,14 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 
+#include "BandPassFilter.h"
 #include "EwmaFilter.h"
 #include "FilterBase.h"
 #include "HampelFilter.h"
 #include "LowPassFilter.h"
 #include "MedianFilter.h"
 #include "MovingAverageFilter.h"
+#include "NotchFilter.h"
 #include "SignalChartWidget.h"
 
 #include <QAction>
@@ -56,6 +58,14 @@ MainWindow::MainWindow(QWidget *parent)
     , alphaSpinBox(nullptr)
     , hampelThresholdLabel(nullptr)
     , hampelThresholdSpinBox(nullptr)
+    , centerFrequencyLabel(nullptr)
+    , centerFrequencySpinBox(nullptr)
+    , bandwidthLabel(nullptr)
+    , bandwidthSpinBox(nullptr)
+    , lowCutoffLabel(nullptr)
+    , lowCutoffSpinBox(nullptr)
+    , highCutoffLabel(nullptr)
+    , highCutoffSpinBox(nullptr)
     , signalChart(nullptr)
     , explanationBrowser(nullptr)
     , refreshTimer(new QTimer(this))
@@ -74,7 +84,7 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowTitle(QStringLiteral("机械臂滤波可视化教学工具"));
     resize(1280, 800);
     setMinimumSize(1024, 640);
-    statusBar()->showMessage(QStringLiteral("阶段 3：基础滤波器已接入"));
+    statusBar()->showMessage(QStringLiteral("阶段 4：频域相关滤波器已接入"));
 }
 
 MainWindow::~MainWindow()
@@ -153,7 +163,9 @@ void MainWindow::setupFilterCatalog()
             QStringLiteral("<h3>陷波滤波器</h3>"
                            "<p><b>解决的问题：</b>压制指定频率附近的周期干扰。</p>"
                            "<p><b>机械臂场景：</b>电机振动、结构共振或电源纹波造成的周期噪声。</p>"
-                           "<p><b>参数影响：</b>带宽越宽抑制范围越大，但可能伤及有用信号。</p>")
+                           "<p><b>核心公式：</b>使用二阶 biquad 陷波结构，在中心频率处形成深衰减。</p>"
+                           "<p><b>参数影响：</b>带宽越宽抑制范围越大，但可能伤及有用信号；中心频率应对准干扰频率。</p>"
+                           "<p><b>优缺点：</b>对单一周期干扰很有效；缺点是参数错位时抑制效果会明显下降。</p>")
         },
         {
             QStringLiteral("互补滤波器"),
@@ -183,7 +195,9 @@ void MainWindow::setupFilterCatalog()
             QStringLiteral("<h3>带通滤波器</h3>"
                            "<p><b>解决的问题：</b>只保留指定频段内的信号成分。</p>"
                            "<p><b>机械臂场景：</b>观察振动频段、诊断周期性机械扰动。</p>"
-                           "<p><b>参数影响：</b>频带过窄可能漏掉目标动态，过宽则噪声保留更多。</p>")
+                           "<p><b>核心公式：</b>使用二阶 biquad 带通结构，按低/高截止频率换算中心频率和 Q 值。</p>"
+                           "<p><b>参数影响：</b>频带过窄可能漏掉目标动态，过宽则噪声保留更多。</p>"
+                           "<p><b>优缺点：</b>适合突出振动频段；缺点是会削弱直流和慢变化趋势。</p>")
         },
         {
             QStringLiteral("图像滤波"),
@@ -333,6 +347,42 @@ void MainWindow::setupCentralLayout()
     hampelThresholdSpinBox->setValue(3.0);
     parameterLayout->addRow(hampelThresholdLabel, hampelThresholdSpinBox);
 
+    centerFrequencyLabel = new QLabel(QStringLiteral("中心频率"), parameterFrame);
+    centerFrequencySpinBox = new QDoubleSpinBox(parameterFrame);
+    centerFrequencySpinBox->setRange(0.1, 45.0);
+    centerFrequencySpinBox->setDecimals(2);
+    centerFrequencySpinBox->setSingleStep(0.5);
+    centerFrequencySpinBox->setSuffix(QStringLiteral(" Hz"));
+    centerFrequencySpinBox->setValue(8.0);
+    parameterLayout->addRow(centerFrequencyLabel, centerFrequencySpinBox);
+
+    bandwidthLabel = new QLabel(QStringLiteral("带宽"), parameterFrame);
+    bandwidthSpinBox = new QDoubleSpinBox(parameterFrame);
+    bandwidthSpinBox->setRange(0.1, 30.0);
+    bandwidthSpinBox->setDecimals(2);
+    bandwidthSpinBox->setSingleStep(0.5);
+    bandwidthSpinBox->setSuffix(QStringLiteral(" Hz"));
+    bandwidthSpinBox->setValue(1.5);
+    parameterLayout->addRow(bandwidthLabel, bandwidthSpinBox);
+
+    lowCutoffLabel = new QLabel(QStringLiteral("低截止"), parameterFrame);
+    lowCutoffSpinBox = new QDoubleSpinBox(parameterFrame);
+    lowCutoffSpinBox->setRange(0.1, 40.0);
+    lowCutoffSpinBox->setDecimals(2);
+    lowCutoffSpinBox->setSingleStep(0.5);
+    lowCutoffSpinBox->setSuffix(QStringLiteral(" Hz"));
+    lowCutoffSpinBox->setValue(3.0);
+    parameterLayout->addRow(lowCutoffLabel, lowCutoffSpinBox);
+
+    highCutoffLabel = new QLabel(QStringLiteral("高截止"), parameterFrame);
+    highCutoffSpinBox = new QDoubleSpinBox(parameterFrame);
+    highCutoffSpinBox->setRange(0.2, 45.0);
+    highCutoffSpinBox->setDecimals(2);
+    highCutoffSpinBox->setSingleStep(0.5);
+    highCutoffSpinBox->setSuffix(QStringLiteral(" Hz"));
+    highCutoffSpinBox->setValue(12.0);
+    parameterLayout->addRow(highCutoffLabel, highCutoffSpinBox);
+
     workSplitter->setStretchFactor(0, 0);
     workSplitter->setStretchFactor(1, 1);
     workSplitter->setStretchFactor(2, 0);
@@ -388,6 +438,30 @@ void MainWindow::connectInteractions()
         configureActiveFilter();
         resetSimulation();
     });
+    connect(centerFrequencySpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this]() {
+        configureActiveFilter();
+        resetSimulation();
+    });
+    connect(bandwidthSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this]() {
+        configureActiveFilter();
+        resetSimulation();
+    });
+    connect(lowCutoffSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this]() {
+        if (lowCutoffSpinBox->value() >= highCutoffSpinBox->value()) {
+            highCutoffSpinBox->setValue(lowCutoffSpinBox->value() + 0.5);
+            return;
+        }
+        configureActiveFilter();
+        resetSimulation();
+    });
+    connect(highCutoffSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this]() {
+        if (highCutoffSpinBox->value() <= lowCutoffSpinBox->value()) {
+            lowCutoffSpinBox->setValue(qMax(0.1, highCutoffSpinBox->value() - 0.5));
+            return;
+        }
+        configureActiveFilter();
+        resetSimulation();
+    });
     connect(filterList, &QListWidget::currentRowChanged, this, &MainWindow::updateSelectedFilter);
     connect(sceneSelector, &QComboBox::currentTextChanged, this, [this](const QString &scene) {
         for (int row = 0; row < filterCatalog.size(); ++row) {
@@ -411,8 +485,13 @@ void MainWindow::updateSelectedFilter(int row)
     sampleRateValue->setText(filter.sampleRate);
     visualTitle->setText(QStringLiteral("可视化区域 - %1").arg(filter.name));
     visualHint->setText(QStringLiteral("%1 场景的实时曲线、动画或图像结果将在这里接入。").arg(filter.scene));
-    explanationBrowser->setHtml(filter.explanationHtml
-                                + QStringLiteral("<p><b>当前阶段：</b>前五个基础平滑滤波器已接入真实输出曲线；其他滤波器将在后续阶段实现。</p>"));
+    QString stageNote = QStringLiteral("<p><b>当前阶段：</b>基础平滑滤波器、陷波滤波器和带通滤波器已接入真实输出曲线；传感器融合和图像滤波将在后续阶段实现。</p>");
+    if (row == 5) {
+        stageNote += QStringLiteral("<pre>简化频率响应：低频 ───── 中心频率附近 ▼ 深衰减 ───── 高频</pre>");
+    } else if (row == 8) {
+        stageNote += QStringLiteral("<pre>简化频率响应：低频 ▼ 衰减 ── 通带 ── 高频 ▼ 衰减</pre>");
+    }
+    explanationBrowser->setHtml(filter.explanationHtml + stageNote);
 
     {
         const QSignalBlocker blocker(sceneSelector);
@@ -447,12 +526,18 @@ void MainWindow::configureActiveFilter()
     case 4:
         activeFilter = std::make_unique<HampelFilter>(windowSizeSpinBox->value(), hampelThresholdSpinBox->value());
         break;
+    case 5:
+        activeFilter = std::make_unique<NotchFilter>(centerFrequencySpinBox->value(), bandwidthSpinBox->value());
+        break;
+    case 8:
+        activeFilter = std::make_unique<BandPassFilter>(lowCutoffSpinBox->value(), highCutoffSpinBox->value());
+        break;
     default:
         activeFilter = std::make_unique<EwmaFilter>(alphaSpinBox->value());
         break;
     }
 
-    if (row > 4) {
+    if (row == 6 || row == 7 || row == 9) {
         parameterSummaryValue->setText(QStringLiteral("后续阶段实现；当前用 %1 预览输出").arg(activeFilter->parameterSummary()));
     } else if (activeFilter) {
         parameterSummaryValue->setText(activeFilter->parameterSummary());
@@ -463,8 +548,10 @@ void MainWindow::updateFilterParameterControls(int row)
 {
     const bool usesCutoff = row == 0;
     const bool usesWindow = row == 1 || row == 3 || row == 4;
-    const bool usesAlpha = row == 2 || row > 4;
+    const bool usesAlpha = row == 2 || row == 6 || row == 7 || row == 9;
     const bool usesHampelThreshold = row == 4;
+    const bool usesNotch = row == 5;
+    const bool usesBandPass = row == 8;
 
     cutoffFrequencyLabel->setVisible(usesCutoff);
     cutoffFrequencySpinBox->setVisible(usesCutoff);
@@ -474,7 +561,14 @@ void MainWindow::updateFilterParameterControls(int row)
     alphaSpinBox->setVisible(usesAlpha);
     hampelThresholdLabel->setVisible(usesHampelThreshold);
     hampelThresholdSpinBox->setVisible(usesHampelThreshold);
-
+    centerFrequencyLabel->setVisible(usesNotch);
+    centerFrequencySpinBox->setVisible(usesNotch);
+    bandwidthLabel->setVisible(usesNotch);
+    bandwidthSpinBox->setVisible(usesNotch);
+    lowCutoffLabel->setVisible(usesBandPass);
+    lowCutoffSpinBox->setVisible(usesBandPass);
+    highCutoffLabel->setVisible(usesBandPass);
+    highCutoffSpinBox->setVisible(usesBandPass);
 }
 
 void MainWindow::updatePlaybackState()

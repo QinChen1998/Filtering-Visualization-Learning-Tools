@@ -20,11 +20,13 @@ INCLUDEPATH += \
 
 SOURCES += \
     src/demos/SignalGenerator.cpp \
+    src/filters/BandPassFilter.cpp \
     src/filters/EwmaFilter.cpp \
     src/filters/HampelFilter.cpp \
     src/filters/LowPassFilter.cpp \
     src/filters/MedianFilter.cpp \
     src/filters/MovingAverageFilter.cpp \
+    src/filters/NotchFilter.cpp \
     src/main.cpp \
     src/mainwindow.cpp \
     src/widgets/SignalChartWidget.cpp
@@ -32,12 +34,14 @@ SOURCES += \
 HEADERS += \
     src/core/SignalFrame.h \
     src/demos/SignalGenerator.h \
+    src/filters/BandPassFilter.h \
     src/filters/EwmaFilter.h \
     src/filters/FilterBase.h \
     src/filters/HampelFilter.h \
     src/filters/LowPassFilter.h \
     src/filters/MedianFilter.h \
     src/filters/MovingAverageFilter.h \
+    src/filters/NotchFilter.h \
     src/mainwindow.h \
     src/widgets/SignalChartWidget.h
 
