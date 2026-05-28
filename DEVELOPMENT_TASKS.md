@@ -72,8 +72,14 @@
 
 ## 4. 建议目录结构
 
+当前项目根目录以本机实际路径为准：
+
 ```text
-Filtering/
+D:\WORK\Filtering-Visualization-Learning-Tools
+```
+
+```text
+Filtering-Visualization-Learning-Tools/
   Filtering.pro
   main.cpp
   mainwindow.h
@@ -157,17 +163,17 @@ Filtering/
 
 任务：
 
-- [ ] 确认当前 Qt 版本、编译器、qmake 路径。
-- [ ] 保留现有 `Filtering.pro`，添加 C++17 配置。
-- [ ] 新建 `src/`、`assets/` 基础目录。
-- [ ] 调整 `.pro`，支持分目录源文件。
+- [x] 确认当前 Qt 版本、编译器、qmake 路径。
+- [x] 保留现有 `Filtering.pro`，添加 C++17 配置。
+- [x] 新建 `src/`、`assets/` 基础目录。
+- [x] 调整 `.pro`，支持分目录源文件。
 - [ ] 确认 Debug / Release 都能启动空窗口。
 
 验收标准：
 
-- [ ] 程序可编译运行。
-- [ ] 主窗口标题、初始尺寸、基础布局正常。
-- [ ] 工程目录清晰，没有无关生成文件纳入源码结构。
+- [x] 程序可编译运行。
+- [x] 主窗口标题、初始尺寸、基础布局正常。
+- [x] 工程目录清晰，没有无关生成文件纳入源码结构。
 
 ### 阶段 1：主界面框架
 
@@ -496,3 +502,16 @@ LIBS += -lopencv_world4xx
 下一步：
 ```
 
+```text
+日期：2026-05-28
+
+本次目标：启动阶段 0 工程基础整理
+
+完成内容：新增 .gitignore；确认 Qt 6.9.2、qmake、llvm-mingw 工具链；创建 src/ 与 assets/ 目录骨架；将主窗口源码迁入 src/；调整 Filtering.pro 支持分目录源码；搭建主窗口标题、尺寸、工具栏、三栏工作区和底部说明区占位布局。
+
+测试结果：Release 构建通过，生成 build/release/Filtering.exe；Debug 构建通过，生成 build-debug/debug/Filtering.exe。构建过程中 moc 输出 Qt license client 锁文件警告，但最终退出码为 0。
+
+遗留问题：尚未通过工具启动 GUI 窗口做人工视觉确认；阶段 1 仍需接入真实控件状态同步和 QTimer 刷新节拍。
+
+下一步：进入阶段 1，完善主界面框架的交互状态、参数面板占位组件和说明区联动。
+```

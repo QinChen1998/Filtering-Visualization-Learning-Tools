@@ -18,6 +18,9 @@ public:
     ~MainWindow();
 
 private:
+    void setupToolbar();
+    void setupCentralLayout();
+
     Ui::MainWindow *ui;
 };
 #endif // MAINWINDOW_H
