@@ -1,0 +1,68 @@
+# Qt Creator user/session files
+*.pro.user
+*.pro.user.*
+*.qbs.user
+*.qbs.user.*
+*.creator.user
+*.creator.user.*
+*.autosave
+
+# Qt/qmake generated files
+Makefile
+Makefile.*
+.qmake.cache
+.qmake.stash
+qmake_*
+moc_*.cpp
+moc_*.h
+ui_*.h
+qrc_*.cpp
+
+# Build directories
+build/
+build-*/
+debug/
+release/
+Debug/
+Release/
+cmake-build-*/
+
+# CMake generated files, in case the project migrates later
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+
+# C/C++ build artifacts
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.exp
+*.idb
+*.manifest
+
+# Generated runtime/package output
+*.app/
+*.dSYM/
+*.log
+
+# IDE/editor metadata
+.idea/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
