@@ -20,6 +20,7 @@ class QAction;
 class QComboBox;
 class QDoubleSpinBox;
 class FilterBase;
+class ForceTorqueWidget;
 class QLabel;
 class QListWidget;
 class RobotArmWidget;
@@ -55,7 +56,9 @@ private:
     void updatePlaybackState();
     void updateSignalConfiguration();
     bool isFusionFilterSelected() const;
+    bool isForceTorqueFilterSelected() const;
     SignalFrame nextFusionFrame();
+    SignalFrame nextForceTorqueFrame(double timeSeconds);
     void resetSimulation();
     void advanceFrame();
 
@@ -100,6 +103,7 @@ private:
     QDoubleSpinBox *measurementNoiseSpinBox;
     SignalChartWidget *signalChart;
     RobotArmWidget *robotArmWidget;
+    ForceTorqueWidget *forceTorqueWidget;
     QTextBrowser *explanationBrowser;
     SignalGenerator signalGenerator;
     std::unique_ptr<FilterBase> activeFilter;

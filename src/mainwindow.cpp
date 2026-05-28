@@ -6,6 +6,7 @@
 #include "ComplementaryFilter.h"
 #include "EwmaFilter.h"
 #include "FilterBase.h"
+#include "ForceTorqueWidget.h"
 #include "HampelFilter.h"
 #include "KalmanFilter1D.h"
 #include "LowPassFilter.h"
@@ -35,6 +36,8 @@
 #include <QToolBar>
 #include <QVBoxLayout>
 #include <QtMath>
+
+#include <cmath>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -78,6 +81,7 @@ MainWindow::MainWindow(QWidget *parent)
     , measurementNoiseSpinBox(nullptr)
     , signalChart(nullptr)
     , robotArmWidget(nullptr)
+    , forceTorqueWidget(nullptr)
     , explanationBrowser(nullptr)
     , refreshTimer(new QTimer(this))
     , isPlaying(false)
@@ -316,10 +320,13 @@ void MainWindow::setupCentralLayout()
     visualHint->setWordWrap(true);
     signalChart = new SignalChartWidget(visualFrame);
     robotArmWidget = new RobotArmWidget(visualFrame);
+    forceTorqueWidget = new ForceTorqueWidget(visualFrame);
     visualLayout->addWidget(visualTitle);
     visualLayout->addWidget(signalChart, 1);
     visualLayout->addWidget(robotArmWidget, 1);
+    visualLayout->addWidget(forceTorqueWidget, 1);
     visualLayout->addWidget(visualHint);
+    forceTorqueWidget->setVisible(false);
 
     auto *parameterFrame = new QFrame(workSplitter);
     parameterFrame->setFrameShape(QFrame::StyledPanel);
@@ -543,6 +550,8 @@ void MainWindow::updateSelectedFilter(int row)
         stageNote += QStringLiteral("<pre>简化频率响应：低频 ───── 中心频率附近 ▼ 深衰减 ───── 高频</pre>");
     } else if (row == 6 || row == 7) {
         stageNote += QStringLiteral("<p><b>融合曲线说明：</b>蓝色为真实值，红色为慢漂移但较稳定的传感器 A，紫色为高频响应快但噪声更大的传感器 B，绿色为融合结果。</p>");
+    } else if (row >= 1 && row <= 4) {
+        stageNote += QStringLiteral("<p><b>力/力矩对比：</b>下方对比图模拟接触突变、短时冲击和随机尖峰，并同时显示滑动平均、EWMA、中值、Hampel 的处理结果。滑动平均/EWMA 更容易展示响应速度与平滑程度的取舍；中值/Hampel 更适合观察尖峰抑制。</p>");
     } else if (row == 8) {
         stageNote += QStringLiteral("<pre>简化频率响应：低频 ▼ 衰减 ── 通带 ── 高频 ▼ 衰减</pre>");
     } else if (row == 9) {
@@ -640,6 +649,7 @@ void MainWindow::updateFilterParameterControls(int row)
     processNoiseSpinBox->setVisible(usesKalman);
     measurementNoiseLabel->setVisible(usesKalman);
     measurementNoiseSpinBox->setVisible(usesKalman);
+    forceTorqueWidget->setVisible(row >= 1 && row <= 4);
 }
 
 void MainWindow::updatePlaybackState()
@@ -708,6 +718,12 @@ bool MainWindow::isFusionFilterSelected() const
     return row == 6 || row == 7;
 }
 
+bool MainWindow::isForceTorqueFilterSelected() const
+{
+    const int row = filterList ? filterList->currentRow() : -1;
+    return row >= 1 && row <= 4;
+}
+
 SignalFrame MainWindow::nextFusionFrame()
 {
     SignalFrame baseFrame = signalGenerator.nextFrame();
@@ -727,6 +743,26 @@ SignalFrame MainWindow::nextFusionFrame()
     return frame;
 }
 
+SignalFrame MainWindow::nextForceTorqueFrame(double timeSeconds)
+{
+    const double phase = std::fmod(timeSeconds, 10.0);
+    const double contact = phase < 2.0 ? 0.0 : (phase < 2.45 ? (phase - 2.0) / 0.45 : 1.0);
+    const double release = phase > 8.0 ? qMax(0.0, 1.0 - (phase - 8.0) / 0.8) : 1.0;
+    const double trueForce = contact * release * 1.4 + 0.08 * qSin(2.0 * timeSeconds);
+    const double impulse = std::fmod(timeSeconds, 5.0) < 0.08 ? 1.15 : 0.0;
+    const double randomSpike = QRandomGenerator::global()->generateDouble() < 0.018
+        ? (QRandomGenerator::global()->generateDouble() < 0.5 ? -1.0 : 1.0) * (0.7 + QRandomGenerator::global()->generateDouble() * 0.7)
+        : 0.0;
+    const double noise = (QRandomGenerator::global()->generateDouble() - 0.5) * 0.16;
+
+    SignalFrame frame;
+    frame.timeSeconds = timeSeconds;
+    frame.referenceValue = trueForce;
+    frame.noisyValue = trueForce + impulse + randomSpike + noise;
+    frame.filteredValue = frame.noisyValue;
+    return frame;
+}
+
 void MainWindow::resetSimulation()
 {
     frameCounter = 0;
@@ -736,6 +772,7 @@ void MainWindow::resetSimulation()
     }
     signalChart->clear();
     robotArmWidget->clearTrajectories();
+    forceTorqueWidget->clear();
     updatePlaybackState();
     statusBar()->showMessage(QStringLiteral("演示状态已重置"));
 }
@@ -749,5 +786,9 @@ void MainWindow::advanceFrame()
     }
     signalChart->appendFrame(frame);
     robotArmWidget->updatePose(frame.noisyValue, frame.filteredValue);
+    if (isForceTorqueFilterSelected()) {
+        const SignalFrame forceFrame = nextForceTorqueFrame(frame.timeSeconds);
+        forceTorqueWidget->appendSample(forceFrame.timeSeconds, forceFrame.referenceValue, forceFrame.noisyValue, 1.0 / signalGenerator.sampleRate());
+    }
     frameCounterValue->setText(QString::number(frameCounter));
 }

@@ -32,6 +32,7 @@ SOURCES += \
     src/filters/NotchFilter.cpp \
     src/main.cpp \
     src/mainwindow.cpp \
+    src/widgets/ForceTorqueWidget.cpp \
     src/widgets/RobotArmWidget.cpp \
     src/widgets/SignalChartWidget.cpp
 
@@ -50,6 +51,7 @@ HEADERS += \
     src/filters/MovingAverageFilter.h \
     src/filters/NotchFilter.h \
     src/mainwindow.h \
+    src/widgets/ForceTorqueWidget.h \
     src/widgets/RobotArmWidget.h \
     src/widgets/SignalChartWidget.h
 
